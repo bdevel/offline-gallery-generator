@@ -14,3 +14,4 @@ pom.xml.asc
 .cpcache/
 .calva/
 .lsp/
+.DS_Store

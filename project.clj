@@ -6,7 +6,8 @@
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [me.raynes/fs "1.4.6"]
                  [io.joshmiller/exif-processor "0.2.0"]
-                 [image-resizer "0.1.10"]]
+                 [image-resizer "0.1.10"]
+                 [clojure.java-time "0.3.2"]]
   :main ^:skip-aot offline-gallery-generator.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
