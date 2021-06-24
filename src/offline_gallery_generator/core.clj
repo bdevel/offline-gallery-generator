@@ -4,7 +4,9 @@
             [image-resizer.format :as format]
             [image-resizer.core :refer :all]
             [clojure.java.io :as io]
-            [java-time :as time]))
+            [java-time :as time]
+            [hiccup.core :as hiccup-core]
+            [hiccup.page :as hiccup-page]))
 
 
 (defn- glob->regex
@@ -58,21 +60,17 @@
        thumbnail-path))))
 ;;
 (comment
-  (->> (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
-       ;;second
-       ;;(print "\n")
-       (map (fn [file]
-              (->> file
-                   extract-meta-data
-                   :file-path
-                   make-thumbnails))))
-  (clojure-version)
-  (fs/name "/Users/kanishkkumar/Documents/AdonaiImages/DSC_0005_250x166_250x166.JPG")
-  (make-thumbnails "/Users/kanishkkumar/Documents/AdonaiImages/DSC_0005.JPG")
-  (io/make-parents "/Users/kanishkkumar/Documents/AdonaiImages/abc/asdas/asdasasd/ffff/rrr/rr/s/s/ss/df/df/d")
-  (.mkdir (java.io.File. "/Users/kanishkkumar/Documents/AdonaiImages/abc"))
-  (time/local-date "yyyy:MM:dd HH:mm:ss" "999:01:01 00:00:01")
-  (time/local-date "MM/yyyy/dd" "09/2015/28"))
+  (let [thumbnails (->> (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
+
+                        (map (fn [file]
+                               (->> file
+                                    extract-meta-data
+                                    :file-path
+                                    make-thumbnails))))
+        html (do [:ul
+                  (for [x thumbnails]
+                    [:li [:a {:href x} x]])])]
+    (hiccup-page/html5 {:lang "en"} [:body html])))
 
 
 (defn -main [& args]

@@ -7,7 +7,8 @@
                  [me.raynes/fs "1.4.6"]
                  [io.joshmiller/exif-processor "0.2.0"]
                  [image-resizer "0.1.10"]
-                 [clojure.java-time "0.3.2"]]
+                 [clojure.java-time "0.3.2"]
+                 [hiccup "1.0.5"]]
   :main ^:skip-aot offline-gallery-generator.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
