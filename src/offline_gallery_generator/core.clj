@@ -58,19 +58,36 @@
       (format/as-file
        (resize (io/file image-path) 250 250)
        thumbnail-path))))
-;;
-(comment
-  (let [thumbnails (->> (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
 
-                        (map (fn [file]
-                               (->> file
-                                    extract-meta-data
-                                    :file-path
-                                    make-thumbnails))))
-        html (do [:ul
-                  (for [x thumbnails]
-                    [:li [:a {:href x} x]])])]
-    (hiccup-page/html5 {:lang "en"} [:body html])))
+(defn generate-hrefs [links]
+  [:ul
+   (for [x links]
+     [:li [:img {:src x}] [:a {:href x} x]])])
+(comment
+  (let [local-files (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
+        thumbnails (map (fn [file]
+                          (->> file
+                               extract-meta-data
+                               :file-path
+                               make-thumbnails))
+                        local-files)
+        img-links  (generate-hrefs thumbnails)
+        html (hiccup-page/html5 {:lang "en"} [:body img-links])
+        write-into-file (do
+                          (fs/create (fs/file "/Users/kanishkkumar/Documents/AdonaiImages/index.html"))
+                          (spit "/Users/kanishkkumar/Documents/AdonaiImages/index.html" html))]
+
+    write-into-file)
+
+
+
+  (hiccup-page/html5 {:lang "en"} [:body [:ul (->> (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
+                                                   (map (fn [file]
+                                                          (->> file
+                                                               extract-meta-data
+                                                               :file-path
+                                                               make-thumbnails
+                                                               (fn [href] [:li [:a {:href href} href]])))))]]))
 
 
 (defn -main [& args]
