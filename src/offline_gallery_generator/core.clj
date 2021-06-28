@@ -39,14 +39,51 @@
   (let [pattern (glob->regex match-string)]
     (fs/find-files dir pattern)))
 
-(defn extract-meta-data [file-path]
+(defn build-photo-from-path [file-path]
   (let [ex (ec/exif-for-filename file-path)
-        file-date (get ex "Date/Time Digitized")]
-    ;; TODO Date Object instead of string
-    {:created-at (time/local-date-time "yyyy:MM:dd HH:mm:ss" (if (nil? file-date)
-                                                               "1970:01:01 00:00:01"
-                                                               file-date))
+
+        exif-date (get ex "Date/Time Digitized")
+
+        created-at (if exif-date
+                     (time/local-date-time "yyyy:MM:dd HH:mm:ss" exif-date)
+                     (time/local-date-time (time/instant->sql-timestamp (time/to-java-date (fs/mod-time file-path)))))]
+
+    {:created-at created-at
      :file-path (str file-path)}))
+#_(defn extract-meta-data [file-path]
+    (let [ex (ec/exif-for-filename file-path)
+          file-date (get ex "Date/Time Digitized")]
+
+      {:created-at (time/local-date-time "yyyy:MM:dd HH:mm:ss" (if (nil? file-date)
+                                                                 "1970:01:01 00:00:01"
+                                                                 file-date))
+       :file-path (str file-path)}))
+
+(defn photo-gallery-destination [photo]
+  ;;["2021" "08" "31"]
+  (time/as (:created-at photo) :year :month-of-year :day-of-month))
+
+
+(comment
+  (time/as (time/local-date-time "yyyy:MM:dd HH:mm:ss" "1970:01:01 00:00:01") :year :month-of-year :day-of-month))
+(defn add-photo-to-gallery [photo gallery]
+  (let [dest (photo-gallery-destination photo)]
+    (update-in gallery (into [:gallery-structure] dest) conj photo)))
+
+
+
+(defn build-gallery [source-path settings]
+  (reduce (fn [gallery photo-path]
+            (add-photo-to-gallery (build-photo-from-path photo-path)
+                                  gallery))
+          {}
+          (search-files source-path (get settings :file-regex "{*.jpg}"))))
+
+
+(comment
+
+  (build-gallery "/Users/kanishkkumar/Documents/AdonaiImages" {})
+  (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}"))
 
 (defn make-thumbnails [image-path]
   (let [thumbnail-path (str (fs/parent image-path)
@@ -63,6 +100,7 @@
   [:ul
    (for [x links]
      [:li [:img {:src x}] [:a {:href x} x]])])
+
 (comment
   (let [local-files (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
         thumbnails (map (fn [file]
@@ -88,6 +126,25 @@
                                                                :file-path
                                                                make-thumbnails
                                                                (fn [href] [:li [:a {:href href} href]])))))]]))
+
+
+
+(comment
+  (def example-gallery {:settings {:copy true}
+                        :gallery-structure {"2021(year)" {"08(month)" {"31(day)" [{:original-path "string" :created-at "MM/DD/YYYY" :exif-data "exif Data Object"}]}}}})
+
+  (defn photo-gallery-destination [photo]
+
+    ["2021" "08" "31"])
+
+  (defn add-photo-to-gallery [photo gallery]
+    (let [dest (photo-gallery-destination photo)]
+      (update-in gallery (into [:gallery-structure] dest) conj photo)))
+
+  (add-photo-to-gallery {:created-at "123/123/123"} example-gallery))
+
+
+
 
 
 (defn -main [& args]
