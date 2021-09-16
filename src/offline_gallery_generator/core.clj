@@ -4,6 +4,7 @@
             [image-resizer.format :as format]
             [image-resizer.core :refer :all]
             [clojure.java.io :as io]
+            [clojure.string :as clj-str]
             [java-time :as time]
             [hiccup.core :as hiccup-core]
             [hiccup.page :as hiccup-page]))
@@ -50,14 +51,6 @@
 
     {:created-at created-at
      :file-path (str file-path)}))
-#_(defn extract-meta-data [file-path]
-    (let [ex (ec/exif-for-filename file-path)
-          file-date (get ex "Date/Time Digitized")]
-
-      {:created-at (time/local-date-time "yyyy:MM:dd HH:mm:ss" (if (nil? file-date)
-                                                                 "1970:01:01 00:00:01"
-                                                                 file-date))
-       :file-path (str file-path)}))
 
 (defn photo-gallery-destination [photo]
   ;;["2021" "08" "31"]
@@ -66,13 +59,18 @@
 
 (comment
   (time/as (time/local-date-time "yyyy:MM:dd HH:mm:ss" "1970:01:01 00:00:01") :year :month-of-year :day-of-month))
+
+
 (defn add-photo-to-gallery [photo gallery]
   (let [dest (photo-gallery-destination photo)]
     (update-in gallery (into [:gallery-structure] dest) conj photo)))
 
 
 
-(defn build-gallery [source-path settings]
+(defn build-gallery-struct
+  "Create gallery hashmap structure"
+  ;; TODO Settings for searching a file
+  [source-path settings]
   (reduce (fn [gallery photo-path]
             (add-photo-to-gallery (build-photo-from-path photo-path)
                                   gallery))
@@ -80,10 +78,52 @@
           (search-files source-path (get settings :file-regex "{*.jpg}"))))
 
 
-(comment
+(defn make-gallery-page
+  "Make index html for our gallery"
+  [files settings]
+  ;; spit the html in the index
+  ;; create a dir named THUMBNAILS with thumbnails 
+  )
 
-  (build-gallery "/Users/kanishkkumar/Documents/AdonaiImages" {})
+
+
+(defn build-walking
+  "Walk through"
+  [struct settings]
+  (let [cur-dir (get settings :output-dir (str fs/*cwd* "/Gallery"))]
+    (if (map? struct)
+      (map
+       (fn [k]
+         (fs/mkdirs (str cur-dir "/" k))
+
+         (build-walking (get struct k) (assoc settings :output-dir (str cur-dir "/" k))))
+       (keys struct))
+
+      (spit (str cur-dir "/index.html") (str struct)))))
+
+(defn build-gallery
+  "Create Folder and files"
+  ;; 
+  [gallery settings]
+  (build-walking (:gallery-structure gallery) settings)
+  #_(let [;;struct gallery-struct
+          cur-dir (get settings :output-dir (str fs/*cwd* "/Gallery"))]
+      (if (map? gallery-struct)
+        (map
+         (fn [folder-name]
+           (fs/mkdir folder-name))
+         (keys gallery-struct)))))
+
+(comment
+  (let [settings {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"}]
+    (build-gallery
+     (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump" settings) settings))
+
   (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}"))
+
+
+
+
 
 (defn make-thumbnails [image-path]
   (let [thumbnail-path (str (fs/parent image-path)
@@ -142,8 +182,6 @@
       (update-in gallery (into [:gallery-structure] dest) conj photo)))
 
   (add-photo-to-gallery {:created-at "123/123/123"} example-gallery))
-
-
 
 
 
