@@ -57,13 +57,12 @@
   (time/as (:created-at photo) :year :month-of-year :day-of-month))
 
 
-(comment
-  (time/as (time/local-date-time "yyyy:MM:dd HH:mm:ss" "1970:01:01 00:00:01") :year :month-of-year :day-of-month))
 
 
 (defn add-photo-to-gallery [photo gallery]
   (let [dest (photo-gallery-destination photo)]
     (update-in gallery (into [:gallery-structure] dest) conj photo)))
+
 
 
 
@@ -77,13 +76,48 @@
           {}
           (search-files source-path (get settings :file-regex "{*.jpg}"))))
 
+(defn extract-meta-data [file-path]
+  (print "file-path" file-path)
+  #_(let [ex (ec/exif-for-filename file-path)
+          file-date (get ex "Date/Time Digitized")]
+
+      {:created-at (time/local-date-time "yyyy:MM:dd HH:mm:ss" (if (nil? file-date)
+                                                                 "1970:01:01 00:00:01"
+                                                                 file-date))
+       :file-path (str file-path)}))
+
+(defn generate-hrefs [links]
+  [:ul
+   (for [x links]
+     [:li [:a {:href x} [:img {:src x}]]])])
+
+(defn make-thumbnails [settings image-path]
+  (let [thumbnail-path (str (:output-dir settings)
+                            "/thumbnail/")
+        new-image-path (str thumbnail-path (fs/name image-path)
+                            (fs/extension image-path))]
+    (fs/mkdirs thumbnail-path)
+    (format/as-file
+     (resize (io/file image-path) 250 250)
+     new-image-path)
+    new-image-path))
 
 (defn make-gallery-page
   "Make index html for our gallery"
   [files settings]
   ;; spit the html in the index
-  ;; create a dir named THUMBNAILS with thumbnails 
-  )
+  ;; create a dir named THUMBNAILS with thumbnails
+  ;;(println (:output-dir settings) "\n")
+  (let [thumbnails-path (map (fn [file]
+                               (->> file
+                               ;;extract-meta-data
+                                    :file-path
+                                    (make-thumbnails settings)))
+                             files)
+        img-links  (generate-hrefs thumbnails-path)
+        html (hiccup-page/html5 {:lang "en"} [:body img-links])
+        write-into-file (spit (get settings :index-location) html)]
+    thumbnails-path))
 
 
 
@@ -91,6 +125,7 @@
   "Walk through"
   [struct settings]
   (let [cur-dir (get settings :output-dir (str fs/*cwd* "/Gallery"))]
+
     (if (map? struct)
       (map
        (fn [k]
@@ -99,12 +134,13 @@
          (build-walking (get struct k) (assoc settings :output-dir (str cur-dir "/" k))))
        (keys struct))
 
-      (spit (str cur-dir "/index.html") (str struct)))))
+      (make-gallery-page struct (assoc settings :index-location (str cur-dir "/index.html"))))))
 
 (defn build-gallery
   "Create Folder and files"
   ;; 
   [gallery settings]
+
   (build-walking (:gallery-structure gallery) settings)
   #_(let [;;struct gallery-struct
           cur-dir (get settings :output-dir (str fs/*cwd* "/Gallery"))]
@@ -114,32 +150,23 @@
            (fs/mkdir folder-name))
          (keys gallery-struct)))))
 
+
 (comment
   (let [settings {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"}]
     (build-gallery
      (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump" settings) settings))
-
+  (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump" {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"})
   (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}"))
 
 
+(comment
+  (time/as (time/local-date-time "yyyy:MM:dd HH:mm:ss" "1970:01:01 00:00:01") :year :month-of-year :day-of-month))
 
 
 
-(defn make-thumbnails [image-path]
-  (let [thumbnail-path (str (fs/parent image-path)
-                            "/thumbnail/"
-                            (fs/name image-path)
-                            (fs/extension image-path))]
-    (do
-      (io/make-parents thumbnail-path)
-      (format/as-file
-       (resize (io/file image-path) 250 250)
-       thumbnail-path))))
 
-(defn generate-hrefs [links]
-  [:ul
-   (for [x links]
-     [:li [:img {:src x}] [:a {:href x} x]])])
+
+
 
 (comment
   (let [local-files (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
