@@ -3,6 +3,7 @@
             [exif-processor.core :as ec]
             [image-resizer.format :as format]
             [image-resizer.core :refer :all]
+            [image-resizer.fs :as resizer-fs]
             [clojure.java.io :as io]
             [clojure.string :as clj-str]
             [java-time :as time]
@@ -57,13 +58,9 @@
   (time/as (:created-at photo) :year :month-of-year :day-of-month))
 
 
-
-
 (defn add-photo-to-gallery [photo gallery]
   (let [dest (photo-gallery-destination photo)]
     (update-in gallery (into [:gallery-structure] dest) conj photo)))
-
-
 
 
 (defn build-gallery-struct
@@ -76,65 +73,125 @@
           {}
           (search-files source-path (get settings :file-regex "{*.jpg}"))))
 
-(defn extract-meta-data [file-path]
-  (print "file-path" file-path)
-  #_(let [ex (ec/exif-for-filename file-path)
-          file-date (get ex "Date/Time Digitized")]
-
-      {:created-at (time/local-date-time "yyyy:MM:dd HH:mm:ss" (if (nil? file-date)
-                                                                 "1970:01:01 00:00:01"
-                                                                 file-date))
-       :file-path (str file-path)}))
 
 (defn generate-hrefs [links]
   [:ul
    (for [x links]
-     [:li [:a {:href x} [:img {:src x}]]])])
+     [:li [:a {:href (:file-path x)} [:img {:src (:thumb-path x)}]]])])
 
-(defn make-thumbnails [settings image-path]
-  (let [thumbnail-path (str (:output-dir settings)
+(defn make-thumbnails [image-path settings]
+  (let [[w h] [250 250]
+        thumbnail-path (str (:output-dir settings)
                             "/thumbnail/")
-        new-image-path (str thumbnail-path (fs/name image-path)
-                            (fs/extension image-path))]
+        destination-path (str thumbnail-path (fs/name image-path)
+                              (fs/extension image-path))
+        new-image-path (resizer-fs/new-filename destination-path [w h])]
     (fs/mkdirs thumbnail-path)
-    (format/as-file
-     (resize (io/file image-path) 250 250)
-     new-image-path)
+    (when (not (fs/exists? new-image-path))
+      (format/as-file
+       (resize (io/file image-path) w h)
+       new-image-path
+       :verbatim))
     new-image-path))
 
-(defn make-gallery-page
+
+
+(defn build-gallery-page
   "Make index html for our gallery"
   [files settings]
   ;; spit the html in the index
   ;; create a dir named THUMBNAILS with thumbnails
   ;;(println (:output-dir settings) "\n")
-  (let [thumbnails-path (map (fn [file]
-                               (->> file
-                               ;;extract-meta-data
-                                    :file-path
-                                    (make-thumbnails settings)))
-                             files)
-        img-links  (generate-hrefs thumbnails-path)
+  (let [thumb-files (map (fn [file]
+                           (assoc file :thumb-path (make-thumbnails (:file-path file) settings)))
+                         files)
+        ;; Problem 1
+        img-links  (generate-hrefs thumb-files)
         html (hiccup-page/html5 {:lang "en"} [:body img-links])
-        write-into-file (spit (get settings :index-location) html)]
-    thumbnails-path))
+        index-path (str (get settings :output-dir) "/index.html")]
+    (spit index-path html)
+    {:photos thumb-files
+     :index-path index-path
+     :title (last (fs/split (get settings :output-dir)))
+     :sub-pages nil}))
 
 
+(defn collect-sub-pages [page]
+  (loop [sub-pages (get page :sub-pages)
+         all-subs (get page :sub-pages)]
+    (if sub-pages
+      (recur (next sub-pages)
+             (concat all-subs (collect-sub-pages (first sub-pages))))
+      all-subs)))
+
+
+(defn sample-directory-photos [page qty]
+  (let [sub-pages (collect-sub-pages page)
+        photo-pages (filter  #(not-empty (:photos %)) sub-pages)
+        photo-list (loop [pages photo-pages
+                          items (list)]
+                     (if (or (>= (count items) qty)
+                             (nil? pages))
+                       items
+                       (let [cur-page (first pages)
+                             photo (first (:photos cur-page))
+                             new-photo (assoc photo
+                                              :page (select-keys cur-page [:index-path :title]))
+                             newcur-page (update cur-page :photos next)
+                             new-items (if photo
+                                         (conj items new-photo)
+                                         items)
+                             new-pages (if (:photos newcur-page)
+                                         (concat (next pages) [newcur-page])
+                                         (next pages))]
+                         (recur new-pages
+                                new-items))))]
+    (sort-by #(get-in % [:page :index-path]) photo-list)))
+
+(defn build-directory-page
+  "Make index html for directories"
+  [sub-pages settings]
+  (let [page-title (last (fs/split (get settings :output-dir)))
+        sub-dir-links [:ul
+                       (map (fn [p]
+                              [:li [:a {:href (:index-path p)} (:title p)]
+                               [:br]
+                               (map (fn [f]
+                                      [:a
+                                       {:href (get-in f [:page :index-path])
+                                        :title (get-in f [:page :title])}
+                                       [:img {:src (:thumb-path f)}]])
+                                    (sample-directory-photos p 10))])
+                            sub-pages)]
+        html (hiccup-page/html5 {:lang "en"}
+                                [:head [:style {:type "text/css"} "h1 {color: green}"]]
+                                [:body
+                                 [:h1 page-title]
+                                 sub-dir-links])
+        index-path (str (get settings :output-dir) "/index.html")]
+    (spit index-path html)
+    {:photos nil
+     :index-path index-path
+     :title page-title
+     :sub-pages nil}))
 
 (defn build-walking
   "Walk through"
   [struct settings]
   (let [cur-dir (get settings :output-dir (str fs/*cwd* "/Gallery"))]
-
     (if (map? struct)
-      (map
-       (fn [k]
-         (fs/mkdirs (str cur-dir "/" k))
+      (let [sub-pages (doall
+                       (map
+                        (fn [k]
+                          (fs/mkdirs (str cur-dir "/" k))
+                          (build-walking (get struct k)
+                                         (assoc settings :output-dir (str cur-dir "/" k))))
+                        (keys struct)))
+            dir-page (build-directory-page sub-pages settings)]
+        (assoc dir-page :sub-pages sub-pages))
 
-         (build-walking (get struct k) (assoc settings :output-dir (str cur-dir "/" k))))
-       (keys struct))
 
-      (make-gallery-page struct (assoc settings :index-location (str cur-dir "/index.html"))))))
+      (build-gallery-page struct (assoc settings :index-location (str cur-dir "/index.html"))))))
 
 (defn build-gallery
   "Create Folder and files"
@@ -152,75 +209,45 @@
 
 
 (comment
+
+
+  (def example-gallery
+    (let [settings {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"}]
+      (build-gallery
+       (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump/2016" settings) settings)))
+
+  (sample-directory-photos example-gallery 10)
+  (count (collect-sub-pages example-gallery))
   (let [settings {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"}]
-    (build-gallery
-     (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump" settings) settings))
+    (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump/2016" settings))
+
+
+
+
+
   (build-gallery-struct "/Users/kanishkkumar/Downloads/PhotoDump" {:output-dir "/Users/kanishkkumar/Downloads/PhotoDump/Gallery"})
   (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}"))
 
 
-(comment
-  (time/as (time/local-date-time "yyyy:MM:dd HH:mm:ss" "1970:01:01 00:00:01") :year :month-of-year :day-of-month))
-
-
-
+#_(fnabs [tree from-path to-path])
 
 
 
 
 (comment
-  (let [local-files (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
-        thumbnails (map (fn [file]
-                          (->> file
-                               extract-meta-data
-                               :file-path
-                               make-thumbnails))
-                        local-files)
-        img-links  (generate-hrefs thumbnails)
+ ;; this from the old  build-gallery-page  function
+  ;;
+  (let [thumb-files (map (fn [file]
+                           (assoc file :thumb-path (make-thumbnails (:file-path file) settings)))
+                         files)
+        ;; Problem 1
+        img-links  (generate-hrefs thumb-files)
         html (hiccup-page/html5 {:lang "en"} [:body img-links])
-        write-into-file (do
-                          (fs/create (fs/file "/Users/kanishkkumar/Documents/AdonaiImages/index.html"))
-                          (spit "/Users/kanishkkumar/Documents/AdonaiImages/index.html" html))]
-
-    write-into-file)
-
-
-
-  (hiccup-page/html5 {:lang "en"} [:body [:ul (->> (search-files "/Users/kanishkkumar/Documents/AdonaiImages" "{*.jpg}")
-                                                   (map (fn [file]
-                                                          (->> file
-                                                               extract-meta-data
-                                                               :file-path
-                                                               make-thumbnails
-                                                               (fn [href] [:li [:a {:href href} href]])))))]]))
-
-
-
-(comment
-  (def example-gallery {:settings {:copy true}
-                        :gallery-structure {"2021(year)" {"08(month)" {"31(day)" [{:original-path "string" :created-at "MM/DD/YYYY" :exif-data "exif Data Object"}]}}}})
-
-  (defn photo-gallery-destination [photo]
-
-    ["2021" "08" "31"])
-
-  (defn add-photo-to-gallery [photo gallery]
-    (let [dest (photo-gallery-destination photo)]
-      (update-in gallery (into [:gallery-structure] dest) conj photo)))
-
-  (add-photo-to-gallery {:created-at "123/123/123"} example-gallery))
-
-
+        index-path (str (get settings :output-dir) "/index.html")]
+    (spit index-path html)))
 
 (defn -main [& args]
   (println args))
 
 
 #_Searchfiles
-
-
-
-
-
-
-
