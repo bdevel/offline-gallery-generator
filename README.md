@@ -19,14 +19,28 @@ Example Usage:
 
 ``` sh
 ./generate-gallery
---copy --move # tbd optional flags
+--copy --move --link # what to do with source photos
+
+--clean # remove any existing gallery artifacts
+--scrub-exif  # remove any unessisary exif data from originals. Does nothing when --link
+
 --only=*.jpg
---thumb=600
+--exif-filter=SUB-STRING # only includes files where exif contains SUB-STRING.
+--exclude=PATTERN       # exclude files matching PATTERN, ex *.png
+--include=PATTERN       # don't exclude files matching PATTERN
+
+--thumb=600 # create multiple resized photos 
 --thumb=1024
-~/Pictures  #list any number of directories to scan
+--max-px=3000 # resize any photos over this size. Does nothing when --link
+
+--split=4.7GB # split gallery into chunks for DVD burn
+
+~/Pictures  # list any number of directories to scan
 /mnt/old-backup-drive
 ./my-gallery #output directory is last
 ```
+
+Use [tools.cli](https://github.com/clojure/tools.cli) for command line parsing.
 
 ### File Scanning
 With the specified directories, the project needs to collect the files to add to
